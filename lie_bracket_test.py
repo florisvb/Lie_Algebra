@@ -7,8 +7,8 @@ INF = np.inf
 def lie_bracket(f1, f2, dx):
     
     n = len(dx)
-    f1dx = sp.matrices.zeros([2,2])
-    f2dx = sp.matrices.zeros([2,2])
+    f1dx = sp.matrices.zeros([n,n])
+    f2dx = sp.matrices.zeros([n,n])
     
     for i in range(n):
         for j in range(n):
@@ -42,7 +42,7 @@ def lie_algebra(F, dx, n_iterations=INF):
     while have_new_lie_brackets is True and iterations < n_iterations:
         have_new_lie_brackets = False
         iterations += 1
-        n = newF.shape[1]
+        n = newF.shape[0]
         for i in range(n):
             for j in range(i+1, n):
                 print
@@ -145,13 +145,21 @@ def is_vec_linear(vec, var_list):
 
     
 if __name__ == "__main__":
+    '''
     x,y,z = sp.symbols('x,y,z')
     dx = [x,z]
     f1 = sp.Matrix([0, x**2])
     f2 = sp.Matrix([z+x, 0])
+    '''
+    
+    x0, x1, x2,x3,x4 = sp.symbols('x0,x1,x2,x3,x4')
+    dx = [x0,x1,x2,x3,x4]
+    
+    f1 = sp.Matrix([1,0,x2,x2**2,0])
+    f2 = sp.Matrix([0,1,x1,0,x1**2])
     
     F = [f1, f2]
-    newF, newF_strings, failedF, failedF_strings = lie_algebra(F, dx, 2)
+    newF, newF_strings, failedF, failedF_strings = lie_algebra(F, dx)
     print 
     print
     print 'Lie Algebra:'
