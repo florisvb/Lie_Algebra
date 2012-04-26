@@ -1,6 +1,7 @@
 import sympy as sp
 import numpy as np
 import inspect
+import copy
 
 INF = np.inf
 
@@ -15,52 +16,95 @@ def lie_bracket(f1, f2, dx):
             f1dx[i,j] = sp.diff(f1[i], dx[j])
             f2dx[i,j] = sp.diff(f2[i], dx[j])
         
-    lb = f2dx*f1 - f1dx*f2
+    lb = (f2dx*f1 - f1dx*f2).expand()
     
     return lb
     
     
-def lie_algebra(F, dx, n_iterations=INF):
-    
+def lie_algebra(F, dx, n_iterations=INF, show=True):
+    # F should either be a list of sp.Matrix elements corresponding to the vector fields, or a sp.Matrix where each column is a vector field
+    # dx should be a list of the sp.symbols that correspond to the partial derivatives
+
     # Make a matrix of Vector Fields
     if type(F) is list:
         n = len(F)
         newF = F[0]
         for i in range(1, n):
             newF = newF.row_join(F[i])
+        F = newF
     else:
         newF = F
+        
+    # number of original vector fields
+    nF = F.shape[1]
+        
+    # original strings:
+    F_strings = ['f'+str(i) for i in range(nF)]
+
+    # initialize lie algebra dictionaries
+    LA_zero = {} # lie brackets that equal zero
+    LA_rejected = {} # lie brackets that are linearly dependent on other terms
+    LA_complete = {} # the complete lie algebra
+    LA_original = {} # the original vector fields
+    tested_lie_brackets = [] # keep track of all the computed lie brackets in string form
+        
+    # match vector fields with their string names
+    for i, s in enumerate(F_strings):
+        LA_original.setdefault(F_strings[i], F[:,i])
+    # initialize complete Lie Algebra with original
+    LA_complete = copy.copy(LA_original)
     
+    # temporary lie algebra, used for linear dependence calculations
     newF_tmp = newF
-    newF_strings = ['f'+str(i) for i in range(n)]
     
-    failedF = []
-    failedF_strings = []
-    
+    # initialize    
     have_new_lie_brackets = True
     iterations = 0
+    
+    # run loop
     while have_new_lie_brackets is True and iterations < n_iterations:
+        print 'ITERATION: ', iterations, 'out of: ', n_iterations
+        
+        # re-initialize
         have_new_lie_brackets = False
         iterations += 1
-        n = newF.shape[0]
-        for i in range(n):
-            for j in range(i+1, n):
+        n = newF.shape[1]
+        
+        original_vector_field_strings = LA_original.keys()
+        lie_algebra_strings = LA_complete.keys()
+        
+        for i in range(len(original_vector_field_strings)):
+            for j in range(len(lie_algebra_strings)):
+            
+                k1 = original_vector_field_strings[i]
+                k2 = lie_algebra_strings[j]
+            
                 print
-                print i,j
+                #print i,j
                 
-                lie_bracket_string_name = '[' + newF_strings[i] + ', ' + newF_strings[j] + ']'
-                if lie_bracket_string_name in newF_strings or lie_bracket_string_name in failedF_strings:
+                lie_bracket_string_name = '[' + k1 + ', ' + k2 + ']'
+                print 'calculating: '
+                print lie_bracket_string_name
+
+                if lie_bracket_string_name in tested_lie_brackets:
+                    print 'already computed'
+                    continue
+                else:
+                    tested_lie_brackets.append(lie_bracket_string_name)
+                
+                # hack to make sure f0 term is on the left:
+                if k2 == 'f0':
+                    print 'skipping - will get covered another time'
                     continue
                 
-                lb = lie_bracket(newF[:,i], newF[:,j], dx)
-                if np.sum(lb) == 0:
+                lb = lie_bracket(LA_original[k1], LA_complete[k2], dx)
+                if np.sum(np.abs(lb)) == 0:
+                    print 'lie bracket equals 0'
+                    LA_zero.setdefault(lie_bracket_string_name, lb)
                     continue
                     
-                print lb
-                
                 # temporarily add the new lie bracket to our lie algebra    
                 newF_tmp = lb.row_join(newF)
-                
                 
                 # check to see if there is any linear dependence of the first term on the other terms
                 nullspace = newF_tmp.nullspace()
@@ -73,18 +117,46 @@ def lie_algebra(F, dx, n_iterations=INF):
                 # if the nullspace is linear, then we do not have a linearly independent lie bracket, else we do
                 if np.sum(nullspace_linear_components) == 0:
                     newF = newF_tmp
-                    newF_strings.insert(0, lie_bracket_string_name)
                     have_new_lie_brackets = True
-                    print 'yes'
+                    LA_complete.setdefault(lie_bracket_string_name, lb)
+                    print '* Added to Lie Algebra'
                 else:
-                    failedF.insert(0,lb)
-                    failedF_strings.insert(0,lie_bracket_string_name)
-                    print 'no'
+                    LA_rejected.setdefault(lie_bracket_string_name, lb)
+                    print '* Linearly Dependent on other terms'
                     
-    return newF, newF_strings, failedF, failedF_strings
+    if show:
+        print '*'*25
+        print 'showing results for ', n_iterations, ' iterations'
     
+        print '*'*25
+        print 'original vector fields: '
+        print_LA_simple(LA_original)
+                    
+        print '*'*25
+        print 'complete lie algebra: '
+        print_LA_simple(LA_complete)
+        
+        print '*'*25
+        print 'linearly dependent lie brackets: '
+        print_LA_simple(LA_rejected)
+        
+        print '*'*25
+        print 'lie brackets = zero: '
+        print_LA_simple(LA_zero)
+                    
+    return LA_original, LA_complete, LA_rejected, LA_zero
     
+def print_LA_simple(LA):
+    # shows the values of the dictionary in a practical way
+
+    keys = LA.keys()
+    keys.sort(key = len) # sort shortest to longest
     
+    for key in keys:
+        print
+        print key, ': '
+        print LA[key]
+        
     
 def is_term_linear(m, var_list):
     
@@ -145,28 +217,20 @@ def is_vec_linear(vec, var_list):
 
     
 if __name__ == "__main__":
-    '''
-    x,y,z = sp.symbols('x,y,z')
-    dx = [x,z]
-    f1 = sp.Matrix([0, x**2])
-    f2 = sp.Matrix([z+x, 0])
-    '''
+    # example
+
+    w1,w2,w3 = sp.symbols('w1,w2,w3')
+    g1, g2, g3 = sp.symbols('g1,g2,g3')
+
+    f0 = sp.Matrix([g1*w2*w3, g2*w1*w3, g3*w1*w2])
+    f1 = sp.Matrix([1, 0, 0])
+    f2 = sp.Matrix([0, 1, 0])
+    dx = [w1, w2, w3]
+
+    F = [f0, f1, f2]
+
+    LA_original, LA_complete, LA_rejected, LA_zero = lbt.lie_algebra(F, dx, 2, show=True)
+
+
+
     
-    x0, x1, x2,x3,x4 = sp.symbols('x0,x1,x2,x3,x4')
-    dx = [x0,x1,x2,x3,x4]
-    
-    f1 = sp.Matrix([1,0,x2,x2**2,0])
-    f2 = sp.Matrix([0,1,x1,0,x1**2])
-    
-    F = [f1, f2]
-    newF, newF_strings, failedF, failedF_strings = lie_algebra(F, dx)
-    print 
-    print
-    print 'Lie Algebra:'
-    print 
-    print newF_strings
-    print newF
-    print
-    print 'Failed Lie Brackets:'
-    print failedF_strings
-    print failedF
